@@ -48,18 +48,54 @@ module.exports = {
     product.price = formatPrice(product.price);
     product.old_price = formatPrice(product.old_price);
 
+    //get categories
     results = await Category.all();
     const categories = results.rows;
 
-    return res.render('products/edit.njk', { product, categories });
+    //get images
+    //renomeia o caminho dos arquivos
+    //req.protocol retorna o protocolo http ou https
+    //req.headers.host retorna o dominio do site
+    //file.path retorna o caminho do arquivo local
+    results = await Product.files(product.id);
+    let files = results.rows;
+    files = files.map((file) => ({
+      ...file,
+      src: `${req.protocol}://${req.headers.host}${file.path.replace(
+        'public',
+        ''
+      )}`,
+    }));
+
+    return res.render('products/edit.njk', { product, categories, files });
   },
   async put(req, res) {
     const keys = Object.keys(req.body);
 
     for (const key of keys) {
-      if (req.body[key] == '') {
+      if (req.body[key] == '' && key != 'removed_files') {
         return res.send('Please, fill all fields!');
       }
+    }
+
+    //coloca novas imagens da edicao no banco
+    if (req.files.length != 0) {
+      const newFilesPromise = req.files.map((file) =>
+        File.create({ ...file, product_id: req.body.id })
+      );
+
+      await Promise.all(newFilesPromise);
+    }
+
+    //deleta imagens do banco
+    if (req.body.removed_files) {
+      const removedFiles = req.body.removed_files.split(',');
+      const lastIndex = removedFiles.length - 1;
+      removedFiles.splice(lastIndex, 1);
+
+      const removedFilesPromise = removedFiles.map((id) => File.delete(id));
+
+      await Promise.all(removedFilesPromise);
     }
 
     req.body.price = req.body.price.replace(/\D/g, '');
